@@ -1,0 +1,94 @@
+import PySimpleGUI as sg
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
+import time
+
+#########################################################################################
+########################### V1.0 RPA - Encontrar melhor rota ###########################
+#######################################################################################
+layout = [
+    [sg.Text("Encontre a melhor rota de entrega para o Integrarte!")],
+    [sg.Text("URL da planilha: "), sg.Input(key="-SPREADSHEET_URL-")],
+    [sg.Text("Endereço Inicial: "), sg.Input(key="-ENDERECO-")],
+    [sg.Button("Executar")],
+    [sg.Output(size=(60, 5))]
+]
+
+# Criar a janela da interface
+window = sg.Window("Interface", layout)
+
+# Loop de eventos
+while True:
+    event, values = window.read()
+    if event == sg.WINDOW_CLOSED:
+        break
+    elif event == "Executar":
+        spreadsheet_url = values["-SPREADSHEET_URL-"]
+        endereco = values["-ENDERECO-"]
+        df_list = pd.read_html(spreadsheet_url)
+        df = df_list[0]
+        df = df[df["Unnamed: 7"] == "Entrega a domicÃ­lio (acima de R$30,00)"]
+        df = df[df["Unnamed: 8"] == "0"]
+        df["endereço_entrega"] = df["Unnamed: 9"].astype(str) + ", " + df["Unnamed: 10"].astype(str) + ", " + df[
+            "Unnamed: 12"].astype(str)
+        df = df[df["endereço_entrega"].notna() & (df["endereço_entrega"] != "Não")]
+        df["endereço_entrega"] = df["endereço_entrega"].apply(lambda x: str(x) + ", Uberlandia-MG")
+        df["endereço_entrega"] = df["endereço_entrega"].apply(lambda x: x.encode('latin-1').decode('utf-8').strip())
+        #driver do selenium
+        driver = webdriver.Chrome()
+        time.sleep(1)
+        driver.get("https://www.routexl.com/")
+        time.sleep(1)
+        #fecha o popup
+        try:
+            close_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[@id='BtnDialogClose']/span[2]")))
+            close_button.click()
+        except:
+            pass
+        #Começo
+        element = driver.find_element(By.ID, "buttonPlan")
+        #Mouse Over
+        actions = ActionChains(driver)
+        actions.move_to_element(element).perform()
+        time.sleep(0.5)
+        #input endereço inicial
+        digitar = driver.find_element(By.XPATH, "//div[@id='menu-left']/input")
+        digitar.click()
+        digitar.send_keys(endereco + Keys.ENTER)
+        time.sleep(1)
+        digitar.clear()
+        for endereco_loop in df['endereço_entrega']:
+            digitar_loop = driver.find_element(By.XPATH, "//div[@id='menu-left']/input")
+            digitar_loop.click()
+            digitar_loop.clear()
+            digitar_loop.send_keys(endereco_loop + Keys.ENTER)
+            time.sleep(0.3)
+        time.sleep(1)
+        #Calcula Rota
+        route = driver.find_element(By.XPATH, "//button[@id='buttonPlan']/span[2]")
+        route.click()
+        time.sleep(10)
+        #botao download
+        button_print = driver.find_element(By.XPATH, "//button[@id='buttonDownload']/span[2]")
+        button_print.click()
+        time.sleep(1)
+        #maps
+        button_maps = driver.find_element(By.XPATH, "//button[@id='wgm']/span")
+        button_maps.click()
+        time.sleep(2)
+        #espera
+        WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
+        #nova janela
+        window_handles = driver.window_handles
+        new_window_handle = window_handles[1]  # Índice 1 representa a segunda janela aberta
+        driver.switch_to.window(new_window_handle)
+        #url do maps
+        new_window_url = driver.current_url
+        #fim
+        print("URL da nova janela:", new_window_url)
